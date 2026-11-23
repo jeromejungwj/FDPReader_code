@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+/data/
+/portable.flag
+/build/
+/dist/
+# 기획 원본 (실명·비공개 링크 포함). 공개본은 docs/PRD.md
+/PRD.md

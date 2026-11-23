@@ -101,6 +101,7 @@ class TypedSignatureDialog(QDialog):
         self.color = QComboBox()
         self.color.addItems([T("검정", "Black"), T("파랑", "Blue")])
         self.keep = QCheckBox(T("이 서명 저장", "Save this signature"))
+        self.keep.setChecked(True)  # 손 서명 창과 같은 기본값
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )

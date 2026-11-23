@@ -8,7 +8,7 @@ import time
 import unittest
 from unittest import mock
 
-from PySide6.QtCore import QPoint, QRectF, Qt
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
 from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -24,8 +24,9 @@ from features.sign import sign_canvas
 from features.sign.contacts import Contact
 from storage.state import State
 from tests import helpers
+from tests.test_document import l_shape
 
-qt = QApplication.instance() or QApplication([])
+qt =QApplication.instance() or QApplication([])
 
 
 def wait(condition, seconds=8.0):
@@ -317,8 +318,7 @@ class Editing(AppCase):
             canvas.begin(0.1, 0.5, 0.0)
             for i in range(1, 20):
                 canvas.extend(0.1 + i * 0.04, 0.5 + (i % 4) * 0.03, i * 0.01)
-            dialog.keep.setChecked(True)
-            dialog.confirm()
+            dialog.confirm()  # '이 서명 저장'은 기본으로 켜져 있어야 함
             return dialog.result()
 
         with (
@@ -351,6 +351,47 @@ class Editing(AppCase):
         self.assertTrue(self.window.save())
         with mu.open(path) as saved:
             self.assertEqual([a.type[1] for a in saved[0].annots()], ["Stamp"])
+
+    def test_copy_and_paste_signature(self):
+        tab = self.open_tab(helpers.plain(self.tmp / "a.pdf"))
+        view = tab.view
+        said = []
+        view.message.connect(said.append)
+        self.assertTrue(view.place_signature(0, (100, 200, 200, 250), l_shape()))
+        source = tab.doc.annots(0)[0]
+        copy = self.window.actions_["copy"]
+        self.assertTrue(copy.isEnabled())
+        copy.trigger()
+
+        view.go_to(1)
+        self.assertTrue(wait(lambda: view.page == 1))
+        view.paste(QPointF(self.screen_point(view, 1, 300, 150)))  # 가리킨 자리 가운데
+        pasted = tab.doc.annots(1)
+        self.assertEqual([a.kind for a in pasted], ["Stamp"])
+        for got, want in zip(pasted[0].rect, (250, 125, 350, 175)):
+            self.assertAlmostEqual(got, want, delta=1)
+        self.assertEqual(view._picked.xref, pasted[0].xref)
+
+        view.paste(QPointF(-5, -5))  # 마우스가 문서 밖이면 지금 쪽의 원본과 같은 자리
+        self.assertEqual(len(tab.doc.annots(1)), 2)
+        self.assertIn(source.rect, [a.rect for a in tab.doc.annots(1)])
+        self.assertEqual(tab.doc.annots(0), [source])
+
+        tab.history_step(False)
+        self.assertEqual(len(tab.doc.annots(1)), 1)
+
+        other = self.open_tab(helpers.plain(self.tmp / "b.pdf"))
+        other.view.paste(QPointF(self.screen_point(other.view, 0, 300, 400)))
+        self.assertEqual(other.doc.annots(0), [])  # 다른 문서에는 안 붙음
+
+    def test_ctrl_v_in_text_box_still_pastes_text(self):
+        view = self.open_tab(helpers.plain(self.tmp / "a.pdf")).view
+        self.window.activateWindow()
+        view.begin_text(0, 50, 150)
+        qt.clipboard().setText("붙인 글")
+        view._editor.setFocus()
+        QTest.keyClick(view._editor, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+        self.assertEqual(view._editor.toPlainText(), "붙인 글")  # 창의 Ctrl+V 가 가로채지 않음
 
     def test_no_attribute_hides_a_method(self):
         view = self.open_tab(helpers.plain(self.tmp / "a.pdf")).view
@@ -404,8 +445,8 @@ class SigningMode(unittest.TestCase):
             self.addCleanup(patcher.stop)
         from PySide6.QtGui import QImage
 
-        state = {"sign_width": 1, "sign_color": 0}
-        self.dialog = sign_canvas.SignDialog(None, QImage(), 3.0, state)
+        self.state = {"sign_width": 1, "sign_color": 0, "sign_keep": True}
+        self.dialog = sign_canvas.SignDialog(None, QImage(), 3.0, self.state)
         self.dialog.show()
         self.dialog._start_touch()
         self.addCleanup(lambda: self.dialog.done(0))
@@ -439,6 +480,15 @@ class SigningMode(unittest.TestCase):
         QTest.keyClick(dialog, Qt.Key.Key_Return)
         self.assertTrue(self.cursor_is_free())
         self.assertEqual(len(dialog.signature["strokes"][0]), 10)
+
+    def test_save_choice_starts_on_and_is_remembered(self):
+        dialog = self.dialog
+        self.assertTrue(dialog.keep.isChecked())
+        dialog.canvas.begin(0.1, 0.5, 0.0)
+        dialog.canvas.extend(0.5, 0.5, 0.1)
+        dialog.keep.setChecked(False)
+        dialog.confirm()
+        self.assertFalse(self.state["sign_keep"])
 
     def test_finger_already_down_when_window_opens_is_ignored(self):
         dialog = self.dialog

@@ -20,6 +20,7 @@ DEFAULTS: dict = {
     "sign_width": 1,
     "sign_color": 0,
     "sign_as_ink": False,
+    "sign_keep": True,  # 서명 창의 '이 서명 저장' — 트랙패드 모드에선 커서가 잠겨 클릭할 수 없어 기본으로 켬
     "notice_shown": False,
     "recent": [],  # {"path", "pinned"}
     "positions": {},  # 경로 → 보기 상태

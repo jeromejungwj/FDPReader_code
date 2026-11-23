@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen
+from PySide6.QtCore import QMimeData, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QMenu, QToolTip
 
 from core.document.models import Annot, DocumentError, Field, Graphic, Link
@@ -26,6 +27,8 @@ TEXT_BOX_WIDTH = 240.0
 MIN_AREA = 8.0  # 이보다 작게 끌면 클릭으로 봄 (px)
 MIN_SIZE = 8.0  # 주석 최소 크기 (pt)
 HANDLE = 10.0
+CLIP_FORMAT = "application/x-fdpreader-annot"  # 클립보드 내용: 문서 표식:쪽:xref
+PASTE_OFFSET = 12.0  # 원본 자리에 붙일 때 겹치지 않게 비켜 놓는 거리 (pt)
 FILLABLE = QColor(47, 111, 222, 28)
 SELECTION = QColor(47, 111, 222, 80)
 FOUND = QColor(255, 170, 0, 80)
@@ -74,6 +77,7 @@ class EditView(PageView):
         self._nudge.timeout.connect(self._finish_nudge)
         self._autoscroll = QTimer(self, interval=30)
         self._autoscroll.timeout.connect(self._scroll_while_dragging)
+        self._clip_owner = uuid.uuid4().hex  # 붙여넣기는 같은 문서 안에서만
         QApplication.instance().focusChanged.connect(self._focus_moved)
 
     # 공통
@@ -176,12 +180,91 @@ class EditView(PageView):
     def has_selection(self) -> bool:
         return bool(self._selection) and self._selection[0] != self._selection[1]
 
+    @property
+    def can_copy(self) -> bool:
+        if self._picked:
+            return self._picked.movable
+        return self.has_selection and self.doc.allows("copy")
+
     def copy(self) -> None:
+        if self._picked:
+            self._copy_annot()
+            return
         if not self.has_selection or not self.allowed("copy"):
             return
         parts = [self.doc.text(p).copy_text(a, b) for p, a, b in self.spans()]
         QGuiApplication.clipboard().setText("\n".join(p for p in parts if p))
         self.message.emit(T("복사했습니다.", "Copied."))
+
+    # 주석 복사·붙여넣기 (서명·텍스트 상자·메모)
+
+    def _copy_annot(self) -> None:
+        annot = self._picked
+        if not annot.movable:
+            self.message.emit(T("이 주석은 복사할 수 없습니다.", "This annotation cannot be copied."))
+            return
+        self._finish_nudge()
+        data = QMimeData()
+        data.setData(CLIP_FORMAT, f"{self._clip_owner}:{annot.pno}:{annot.xref}".encode("ascii"))
+        QGuiApplication.clipboard().setMimeData(data)
+        self.message.emit(T("복사했습니다. 붙일 자리에 마우스를 두고 Ctrl+V를 누르세요.",
+                            "Copied. Point where it goes and press Ctrl+V."))
+
+    def _copied_annot(self) -> Annot | None:
+        data = QGuiApplication.clipboard().mimeData()
+        if data is None or not data.hasFormat(CLIP_FORMAT):
+            return None
+        try:  # 다른 프로그램이 같은 형식으로 아무 값이나 넣었을 수 있음
+            owner, pno, xref = bytes(data.data(CLIP_FORMAT)).decode("ascii", "replace").split(":")
+            pno, xref = int(pno), int(xref)
+        except ValueError:
+            return None
+        if owner != self._clip_owner:
+            self.message.emit(T(
+                "다른 문서의 주석은 붙여넣을 수 없습니다. 서명은 '저장된 서명'으로 넣으세요.",
+                "Annotations can only be pasted into the same document. Use saved signatures.",
+            ))
+            return None
+        found = 0 <= pno < self.doc.page_count and next(
+            (a for a in self.doc.annots(pno) if a.xref == xref), None
+        )
+        if not found:
+            self.message.emit(T("복사한 주석이 지워졌습니다.", "The copied annotation is gone."))
+        return found or None
+
+    def paste(self, at: QPointF | None = None) -> None:
+        """at(뷰포트 좌표)이나 마우스가 쪽 위에 있으면 그 자리 가운데에, 아니면 원본과 같은 자리에 붙임."""
+        if self.tool != "select" or self._editor is not None:
+            return
+        source = self._copied_annot()
+        if source is None or not self.allowed("annotate"):
+            return
+        if at is None:
+            at = QPointF(self.viewport().mapFromGlobal(QCursor.pos()))
+        where = self.hit(at) if self.viewport().rect().contains(at.toPoint()) else None
+        x0, y0, x1, y1 = source.rect
+        w, h = x1 - x0, y1 - y0
+        on_source = where and where[0] == source.pno and contains(source.rect, where[1], where[2])
+        if where and where[3] and not on_source:
+            pno, left, top = where[0], where[1] - w / 2, where[2] - h / 2
+        else:
+            pno = source.pno if on_source else self.page
+            left, top = x0, y0
+            if pno == source.pno:
+                left, top = x0 + PASTE_OFFSET, y0 + PASTE_OFFSET
+        if self.doc.page_rotation(pno) != self.doc.page_rotation(source.pno):
+            self.message.emit(T("회전 방향이 다른 쪽에는 붙여넣을 수 없습니다.",
+                                "Cannot paste onto a page with a different rotation."))
+            return
+        page_w, page_h = self.doc.sizes[pno]
+        left = min(max(left, 0.0), max(page_w - w, 0.0))
+        top = min(max(top, 0.0), max(page_h - h, 0.0))
+        ok, xref = self.run_edit(
+            lambda: self.doc.duplicate_annot(source, pno, (left, top, left + w, top + h))
+        )
+        if ok:
+            self._pick_xref(pno, xref)
+            self.message.emit(T("붙여넣었습니다.", "Pasted."))
 
     def select_page(self) -> None:
         self._set_picked(None)
@@ -956,6 +1039,7 @@ class EditView(PageView):
         editable = self.doc.allows("annotate")
         if self._picked:
             menu.addAction(T("편집·메모", "Edit / note"), lambda: self.edit_annot(self._picked))
+            menu.addAction(T("복사", "Copy"), self.copy).setEnabled(self._picked.movable)
             action = menu.addAction(T("삭제", "Delete"), self.delete_picked)
             action.setEnabled(editable and not self._picked.locked)
         elif self.has_selection:
@@ -972,6 +1056,10 @@ class EditView(PageView):
             action = menu.addAction(T("형광펜 + 메모", "Highlight + note"), self.markup_with_note)
             action.setEnabled(editable)
         else:
+            data = QGuiApplication.clipboard().mimeData()
+            if data is not None and data.hasFormat(CLIP_FORMAT):
+                at = QPointF(event.pos())
+                menu.addAction(T("붙여넣기", "Paste"), lambda: self.paste(at)).setEnabled(editable)
             menu.addAction(T("이 쪽 글자 모두 선택", "Select all text on page"), self.select_page)
         menu.exec(event.globalPos())
 

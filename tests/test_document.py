@@ -242,6 +242,33 @@ class Geometry(helpers.TempCase):
         self.assertTrue(all(x0 - 0.1 <= x <= x1 + 0.1 for x in points[::2]))
         self.assertTrue(all(y0 - 0.1 <= y <= y1 + 0.1 for y in points[1::2]))
 
+    def test_duplicate_lands_on_other_page_and_moves_alone(self):
+        path = helpers.plain(self.tmp / "dup.pdf", 2)
+        doc = self.open(path)
+        doc.add_signature(0, (50, 50, 150, 100), l_shape(), as_ink=True)
+        doc.add_signature(0, (50, 200, 150, 250), l_shape())
+        originals = [a.rect for a in doc.annots(0)]
+        target = (200, 300, 300, 350)
+        for source in doc.annots(0):
+            doc.duplicate_annot(source, 1, target)
+        copies = doc.annots(1)
+        self.assertEqual([a.kind for a in copies], ["Ink", "Stamp"])
+        for copy in copies:
+            for got, want in zip(copy.rect, target):
+                self.assertAlmostEqual(got, want, delta=0.05)
+        _, _, w, h, stride, data = doc.render(1, 1.0)
+        for got, want in zip(helpers.ink_box(data, w, h, stride, near=(0, 0, 255)), target):
+            self.assertAlmostEqual(got, want, delta=3)
+
+        doc.move_annot(copies[0], (10, 10, 110, 60))
+        self.assertEqual([a.rect for a in doc.annots(0)], originals)  # 원본은 그대로
+        doc.save()
+        with mu.open(path) as saved:
+            names = [a.info["id"] for page in saved for a in page.annots()]
+        self.assertEqual(len(names), 4)
+        self.assertEqual(len(set(names)), 4)
+        self.assertTrue(all(name.startswith("fdp-") for name in names))
+
     def test_markup_covers_selected_text(self):
         for rotation in (0, 90):
             doc = self.open(helpers.plain(self.tmp / f"m{rotation}.pdf", 1, rotation, True))

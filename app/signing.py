@@ -72,15 +72,17 @@ def warn_signed(parent, doc) -> bool:
     )
 
 
-def keep(parent, signature: dict) -> None:
+def keep(parent, signature: dict) -> bool:
     try:
         SignatureStore().add(signature)
+        return True
     except OSError as error:
         log.exception("서명 저장 실패")
         ui.warn(
             parent,
             T("서명을 저장하지 못했습니다.", "The signature could not be saved.") + f"\n\n{error}",
         )
+        return False
 
 
 def draw_signature(parent, tab, pno: int, rect, state) -> None:
@@ -110,7 +112,11 @@ def draw_signature(parent, tab, pno: int, rect, state) -> None:
         tab.view.setFocus()
         return
     if tab.view.place_signature(pno, rect, to_graphic(signature)) and wants_keep:
-        keep(parent, signature)
+        if keep(parent, signature):
+            tab.view.message.emit(T(
+                "서명을 저장했습니다. 서명 메뉴 > 저장된 서명에서 다시 쓸 수 있습니다.",
+                "Signature saved. Reuse it from Sign > Saved signatures.",
+            ))
 
 
 def use_saved(parent, tab, signature: dict, state) -> None:

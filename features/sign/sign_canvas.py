@@ -256,6 +256,7 @@ class SignDialog(QDialog):
         self._mode_button.setVisible(self._pad_found)
         self.keep = QCheckBox(T("이 서명 저장 (S)", "Save this signature (S)"))
         self.keep.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.keep.setChecked(state["sign_keep"])
         self._cancel_button = self._button(self.reject, T("취소 (Esc)", "Cancel (Esc)"))
         self._ok_button = self._button(self.confirm, T("확정 (Enter)", "Done (Enter)"))
 
@@ -506,6 +507,7 @@ class SignDialog(QDialog):
         }
         self._state["sign_width"] = self._width_index
         self._state["sign_color"] = self._color_index
+        self._state["sign_keep"] = self.keep.isChecked()
         seconds = time.perf_counter() - self._shown_at
         log.info("서명 확정: %.1f초, 전체 지우기 %d회", seconds, self._clears)
         self.accept()

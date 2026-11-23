@@ -288,6 +288,12 @@ class Document:
     def set_annot_text(self, annot: Annot, text: str, rect: Rect | None = None) -> None:
         self._edit("annotate", [annot.pno], lambda d: annots.set_text(d, annot, text, rect))
 
+    def duplicate_annot(self, annot: Annot, pno: int, rect: Rect) -> int:
+        return self._edit("annotate", [pno], lambda d: annots.duplicate(d, annot, pno, rect))
+
+    def page_rotation(self, pno: int) -> int:
+        return self._doc[pno].rotation
+
     def delete_annot(self, annot: Annot) -> None:
         self._edit("annotate", [annot.pno], lambda d: annots.delete(d, annot))
 

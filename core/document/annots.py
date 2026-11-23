@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
+from dataclasses import replace
 
 import pymupdf as mu
 
@@ -203,6 +204,21 @@ def set_text(doc, annot: Annot, text: str, rect: Rect | None = None) -> None:
         box = _user_rect(doc[annot.pno], rect or annot.rect)
         doc.xref_set_key(annot.xref, "Rect", f"[{n(*box)}]")
         _redraw_text(doc, annot.xref, box, text, annot.size)
+
+
+def duplicate(doc, annot: Annot, pno: int, rect: Rect) -> int:
+    """같은 문서의 pno 쪽 rect 자리에 복제. 겉모양(AP)은 원본과 함께 씀 (이 앱은 AP 를 고치지 않고 늘 새로 만듦)."""
+    page = doc[pno]
+    xref = pdfobj.new_object(doc, doc.xref_object(annot.xref, compressed=True))
+    for key in ("Popup", "IRT", "StructParent", "Parent"):  # 원본에 매인 연결은 끊음
+        if pdfobj.get(doc, xref, key)[0] != "null":
+            doc.xref_set_key(xref, key, "null")
+    doc.xref_set_key(xref, "NM", f"({OURS if annot.ours else ''}{uuid.uuid4().hex})")
+    doc.xref_set_key(xref, "M", f"({time.strftime('D:%Y%m%d%H%M%S')})")
+    doc.xref_set_key(xref, "P", f"{page.xref} 0 R")
+    pdfobj.append_annot(doc, page, xref)
+    move(doc, replace(annot, xref=xref, pno=pno), rect)
+    return xref
 
 
 def delete(doc, annot: Annot) -> None:

@@ -128,6 +128,7 @@ class MainWindow(QMainWindow):
         a("redo", T("다시 실행", "Redo"), lambda: self.current().history_step(True),
           ["Ctrl+Y", "Ctrl+Shift+Z"], 0xE7A6)
         a("copy", T("복사", "Copy"), lambda: view().copy(), "Ctrl+C")
+        a("paste", T("붙여넣기", "Paste"), lambda: view().paste(), "Ctrl+V")
         a("select_all", T("이 쪽 글자 모두 선택", "Select all text on page"),
           lambda: view().select_page(), "Ctrl+A")
         a("find", T("찾기", "Find"), lambda: self.current().find(), "Ctrl+F", 0xE721)
@@ -241,7 +242,8 @@ class MainWindow(QMainWindow):
              None, "detach", "close_tab", "quit")
 
         edit = bar.addMenu(T("편집(&E)", "&Edit"))
-        fill(edit, "undo", "redo", None, "copy", "select_all", None, "find", "find_next", "find_prev")
+        fill(edit, "undo", "redo", None, "copy", "paste", "select_all", None,
+             "find", "find_next", "find_prev")
 
         notes = bar.addMenu(T("주석(&A)", "&Annotate"))
         fill(notes, "highlight", "underline", "strike", "mark_note", None, "note", "text",
@@ -433,7 +435,8 @@ class MainWindow(QMainWindow):
         act["mark_note"].setEnabled(editable and view.has_selection)
         act["undo"].setEnabled(doc.can_undo)
         act["redo"].setEnabled(doc.can_redo)
-        act["copy"].setEnabled(view.has_selection and doc.allows("copy"))
+        act["copy"].setEnabled(view.can_copy)
+        act["paste"].setEnabled(editable)
         act["print"].setEnabled(doc.allows("print"))
         act["flatten"].setEnabled(doc.allows("flatten"))
         act["apply_rotation"].setEnabled(view.rotation != 0 and doc.allows("rotate"))

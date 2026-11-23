@@ -61,7 +61,7 @@
 - 앱 멈춤 시 커서 해제: `tests.cursor_check` 실제 커서로 사용자 확인 (감시 프로세스 수정 뒤)
 - 배치한 서명 모서리 끌어 크기 조절: 2026-11-23 수정 후 사용자 확인
 - Precision Touchpad 맞음 — 5점, 2320×1640, 가로세로비 1.415 (PRD 11절 미결 사항 해소), Raw Input 등록·해제 성공
-- 자동 테스트 95개: `.venv\Scripts\python -m unittest`
+- 자동 테스트 96개: `.venv\Scripts\python -m unittest`
 - 표시 일치
   - 테스트 PDF 20종: MuPDF ↔ PDFium(Chrome 엔진) 비교에서 큰 차이 없음
     - 흐림 처리한 흑백 화면에서 밝기 차 45/255 초과 픽셀 기준. 픽셀 동일·색 일치를 뜻하지 않음
@@ -69,6 +69,7 @@
   - 예제 동의서: 실제 Chrome·Edge에서 저장본 확인, Edge에서 평탄화본 확인
 - 손상 PDF 1,500개 변형: 강제 종료 0건
 - pythonw + 파일 인자 실행, 두 번째 실행 → 기존 창에 새 탭
+- 설치판 0.1.0: 빌드 중 오프스크린 점검, 이 PC에 조용히 설치 → 실제 화면에서 첫 쪽 렌더·감시 프로세스 점검 → 제거 후 남은 파일·항목 없음
 
 ### 성능 (`.venv\Scripts\python -m tests.benchmark`, 최종 5회)
 
